@@ -32,7 +32,7 @@ Route::get('user-detail',[API\UserController::class, 'userDetail']);
 Route::get('document-list', [ API\DocumentController::class, 'getList' ] );
 
 Route::get('service-list', [ API\ServiceController::class, 'getList' ]);
-Route::post('estimate-price-time', [ API\ServiceController::class, 'estimatePriceTime' ]);
+Route::post('estimate-price-time', [ API\ServiceController::class, 'estimatePriceTime' ])->middleware(['auth:sanctum', 'throttle:20,1']);
 Route::get('appsetting', [ API\DashboardController::class, 'appsetting'] );
 Route::get('near-by-driver',[ App\Http\Controllers\HomeController::class, 'driverListMap' ]);
 Route::get('language-table-list', [API\LanguageTableController::class, 'getList']);
@@ -149,8 +149,8 @@ Route::group(['middleware' => ['auth:sanctum']], function () {
     Route::post('send-notification', [ API\NotificationController::class, 'sendNotification']);
 });
 
-Route::get('place-autocomplete-api', [ API\RideRequestController::class, 'placeAutoComplete' ] );
-Route::get('place-detail-api', [ API\RideRequestController::class, 'placeDetail' ] );
+Route::get('place-autocomplete-api', [ API\RideRequestController::class, 'placeAutoComplete' ] )->middleware('auth:sanctum');
+Route::get('place-detail-api', [ API\RideRequestController::class, 'placeDetail' ] )->middleware('auth:sanctum');
 
 // get car models
 Route::get('car-models-list', [ API\CarModelController::class, 'getList'] );

@@ -658,9 +658,11 @@ class RideRequestController extends Controller
         
         $google_map_api_key = env('GOOGLE_MAP_KEY');
         
+        $session_token = request('sessiontoken') ? '&sessiontoken='.urlencode(request('sessiontoken')) : '';
+
         $response = Http::withHeaders([
             'Accept-Language' => request('language'),
-        ])->get('https://maps.googleapis.com/maps/api/place/autocomplete/json?input='.request('search_text').'&key='.$google_map_api_key);
+        ])->get('https://maps.googleapis.com/maps/api/place/autocomplete/json?input='.request('search_text').'&key='.$google_map_api_key.$session_token);
 
         return $response->json();
     }
@@ -682,7 +684,11 @@ class RideRequestController extends Controller
         }
         
         $google_map_api_key = env('GOOGLE_MAP_KEY');
-        $response = Http::get('https://maps.googleapis.com/maps/api/place/details/json?placeid='.$request->placeid.'&key='.$google_map_api_key);
+        // Request only Basic-category fields to avoid Contact/Atmosphere data billing.
+        $fields = 'address_components,formatted_address,geometry';
+        $session_token = $request->sessiontoken ? '&sessiontoken='.urlencode($request->sessiontoken) : '';
+
+        $response = Http::get('https://maps.googleapis.com/maps/api/place/details/json?placeid='.$request->placeid.'&fields='.$fields.'&key='.$google_map_api_key.$session_token);
 
         return $response->json();
     }

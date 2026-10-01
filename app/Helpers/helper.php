@@ -533,7 +533,8 @@ function saveRideHistory($data)
                                 $rideData['payment_status'] = '';
                                 $rideData['payment_type'] = '';
                                 $rideData['tips'] = 0;
-                                $firebaseData->set($rideData);
+                                // merge so app-written fields (e.g. eta_pickup / eta_trip) are not wiped
+                                $firebaseData->set($rideData, ['merge' => true]);
                             }
                         } catch (\Exception $e) {
                             \Log::error('Error updating Firestore document for Ride: ' . $e->getMessage());
@@ -1109,6 +1110,20 @@ function og_get_distance_matrix_result($pick_lat, $pick_lng, $drop_lat, $drop_ln
 }
 
 function og_get_distance_matrix($pick_lat, $pick_lng, $drop_lat, $drop_lng, $traffic = false) {
+    // Results for the same route are cached (coordinates rounded to ~11 m) so that
+    // repeated polling / detail calls don't trigger a billed Google request each time.
+    $cache_key = 'og_distance_matrix:' . implode('|', [
+        round((float) $pick_lat, 4),
+        round((float) $pick_lng, 4),
+        round((float) $drop_lat, 4),
+        round((float) $drop_lng, 4),
+    ]);
+
+    $cached = \Illuminate\Support\Facades\Cache::get($cache_key);
+    if (is_array($cached)) {
+        return $cached;
+    }
+
     $google_map_api_key = env('GOOGLE_MAP_KEY');
         
     $response = Http::withHeaders([
@@ -1116,6 +1131,13 @@ function og_get_distance_matrix($pick_lat, $pick_lng, $drop_lat, $drop_lng, $tra
     ])->get('https://maps.googleapis.com/maps/api/distancematrix/json?origins='.$pick_lat.','.$pick_lng.'&destinations='.$drop_lat.','.$drop_lng.'&key='.$google_map_api_key.'&mode=driving');
     
     $responses = $response->json();
+
+    // Only cache successful lookups so errors / ZERO_RESULTS are retried.
+    if (is_array($responses)
+        && ($responses['status'] ?? null) === 'OK'
+        && ($responses['rows'][0]['elements'][0]['status'] ?? null) === 'OK') {
+        \Illuminate\Support\Facades\Cache::put($cache_key, $responses, now()->addHours(24));
+    }
 
     return $responses;
 }
@@ -1931,6 +1953,13 @@ function processReferral($referrerId, $referredId)
 }
 
 function getAddressFromLatLong($lat,$lng){
+    // Cache by coordinates rounded to ~11 m so repeated calls don't each hit Google.
+    $cache_key = 'og_geocode:' . round((float) $lat, 4) . '|' . round((float) $lng, 4);
+    $cached = \Illuminate\Support\Facades\Cache::get($cache_key);
+    if (is_string($cached) && $cached !== '') {
+        return $cached;
+    }
+
     $google_map_api_key = env('GOOGLE_MAP_KEY');
     $response = Http::get("https://maps.googleapis.com/maps/api/geocode/json", [
         'latlng' => "$lat,$lng",
@@ -1941,7 +1970,9 @@ function getAddressFromLatLong($lat,$lng){
 
     if ($response->successful() && isset($data['results'][0])) {
         $address = preg_replace('/^\b[\w\d]+\+\w+\b,?\s*/', '',$data['results'][0]['formatted_address']);
-        return trim($address);
+        $address = trim($address);
+        \Illuminate\Support\Facades\Cache::put($cache_key, $address, now()->addHours(24));
+        return $address;
     }
     return "Address not found";
 }

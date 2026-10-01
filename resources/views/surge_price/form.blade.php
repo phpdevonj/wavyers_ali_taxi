@@ -265,7 +265,7 @@
                 }
                 function initialize() {
                     var address_input = document.getElementById('address-input');
-                    var address = new google.maps.places.Autocomplete(address_input);
+                    var address = new google.maps.places.Autocomplete(address_input, { fields: ['address_components', 'formatted_address', 'geometry'] });
 
                     address.addListener('place_changed', function () {
                         var place = address.getPlace();

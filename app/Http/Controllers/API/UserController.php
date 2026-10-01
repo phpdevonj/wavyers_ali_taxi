@@ -448,7 +448,7 @@ class UserController extends Controller
 
         if($request->is('api*')){
             $clear = request('clear');
-            if( $clear != null ) {
+            if( in_array($clear, ['player_id', 'fcm_token'], true) ) {
                 $user->$clear = null;
             }
             // Revoke the current access token

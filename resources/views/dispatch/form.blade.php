@@ -141,7 +141,7 @@
                             cloneMaster.append(newClone);
 
                             search_drop_location = document.getElementById('search_drop_location_'+ newCloneCount)
-                            autocomplete1 = new google.maps.places.Autocomplete(search_drop_location);
+                            autocomplete1 = new google.maps.places.Autocomplete(search_drop_location, { fields: ['address_components', 'formatted_address', 'geometry'] });
 
                             autocomplete1.addListener('place_changed', function() {
                             curretrow = newCloneCount;
@@ -194,7 +194,7 @@
                 }
                 function initialize() {
                     var start_address_input = document.getElementById('start_address');
-                    var start_address = new google.maps.places.Autocomplete(start_address_input);
+                    var start_address = new google.maps.places.Autocomplete(start_address_input, { fields: ['address_components', 'formatted_address', 'geometry'] });
 
                     start_address.addListener('place_changed', function () {
                         var place = start_address.getPlace();
@@ -212,7 +212,7 @@
                     });
 
                     var end_address_input = document.getElementById('end_address');
-                    var end_address = new google.maps.places.Autocomplete(end_address_input);
+                    var end_address = new google.maps.places.Autocomplete(end_address_input, { fields: ['address_components', 'formatted_address', 'geometry'] });
 
                     end_address.addListener('place_changed', function () {
                         var endplace = end_address.getPlace();
@@ -232,7 +232,7 @@
                         var curretrow = $(this).attr('row');
                         var inputField = document.getElementById('search_drop_location_'+curretrow);
                         
-                        var autocomplete = new google.maps.places.Autocomplete(inputField);
+                        var autocomplete = new google.maps.places.Autocomplete(inputField, { fields: ['address_components', 'formatted_address', 'geometry'] });
 
                         autocomplete.addListener('place_changed', function() {
                             var place = autocomplete.getPlace();
@@ -256,35 +256,6 @@
                         });
                     });
                 }
-
-                $(document).on('change', '.drop_location', function () {
-                    var curretrow = $(this).attr('row');
-                    
-                    var inputField = document.getElementById('search_drop_location_'+curretrow);
-                    
-                    autocomplete = new google.maps.places.Autocomplete(inputField);
-
-                    autocomplete.addListener('place_changed', function() {
-                        var place = autocomplete.getPlace();
-                        
-                        if (!place.geometry) {
-                            alert("{{ __('message.address_autocomplete_error', ['address' => __('message.drop_address')]) }}");
-                            
-                            $('#search_drop_location_'+curretrow).focus();
-                            return;
-                        }
-
-                        place_data = {
-                            'latitude'  : place.geometry['location'].lat().toString(),
-                            'longitude' : place.geometry['location'].lng().toString(),
-                            'address'   : place.formatted_address,
-                            'distance'  : 0,
-                            'postion'   : curretrow,
-                        };
-                        // drop_location.push(place_data)
-                        $('#drop_location_'+curretrow).val(JSON.stringify(place_data));
-                    });
-                });
 
                 $(document).on('change', '.service', function ()
                 {

@@ -11,6 +11,7 @@ use App\Http\Resources\ServiceResource;
 use App\Http\Resources\EstimateServiceResource;
 use App\Http\Requests\ETARequest;
 use App\Models\Coupon;
+use Illuminate\Support\Facades\Log;
 
 class ServiceController extends Controller
 {
@@ -59,92 +60,132 @@ class ServiceController extends Controller
     
     public function estimatePriceTime(ETARequest $request)
     {
-        $service = Service::query();
+        try {
+            $service = Service::query();
 
-        $service->when(request('region_id'), function ($q) {
-            return $q->where('region_id', request('region_id'));
-        });
-
-        $service->when(request('id'), function ($q) {
-            return $q->where('id', request('id'));
-        });
-
-        if( $request->has('pick_lat') && isset($request->pick_lat) && $request->has('pick_lng') && isset($request->pick_lng) )
-        {
-            $point = new Point($request->pick_lat, $request->pick_lng);
-            
-            $service->whereHas('region',function ($q) use($point) {
-                $q->where('status', 1)->contains('coordinates', $point);
+            $service->when(request('region_id'), function ($q) {
+                return $q->where('region_id', request('region_id'));
             });
-        }
-        
-        if( $request->has('coupon_code') && request('coupon_code') != null ) {
-            $response = verify_coupon_code(request('coupon_code'));
 
-            if($response['status'] != 200)
+            $service->when(request('id'), function ($q) {
+                return $q->where('id', request('id'));
+            });
+
+            if( $request->has('pick_lat') && isset($request->pick_lat) && $request->has('pick_lng') && isset($request->pick_lng) )
             {
-                return json_custom_response($response, $response['status']);
+                $point = new Point($request->pick_lat, $request->pick_lng);
+            
+                $service->whereHas('region',function ($q) use($point) {
+                    $q->where('status', 1)->contains('coordinates', $point);
+                });
             }
-        }
         
-        $per_page = config('constant.PER_PAGE_LIMIT');
-        if( $request->has('per_page') && !empty($request->per_page)){
-            if(is_numeric($request->per_page))
-            {
-                $per_page = $request->per_page;
+            if( $request->has('coupon_code') && request('coupon_code') != null ) {
+                $response = verify_coupon_code(request('coupon_code'));
+
+                if($response['status'] != 200)
+                {
+                    return json_custom_response($response, $response['status']);
+                }
             }
-            if($request->per_page == -1 ){
-                $per_page = $service->count();
+        
+            $per_page = config('constant.PER_PAGE_LIMIT');
+            if( $request->has('per_page') && !empty($request->per_page)){
+                if(is_numeric($request->per_page))
+                {
+                    $per_page = $request->per_page;
+                }
+                if($request->per_page == -1 ){
+                    $per_page = $service->count();
+                }
             }
-        }
 
-        $service = $service->orderBy('name','asc')->paginate($per_page);
+            $service = $service->orderBy('name','asc')->paginate($per_page);
 
-        if( !empty(request('drop_location')) ) {
-            $place_details = og_get_distance_matrix_multiple_destination(request('pick_lat'), request('pick_lng'), request('drop_lat'), request('drop_lng'), request('drop_location'));
+            // In-ride refreshes (ride_id sent) reuse the last distance/duration for a few minutes
+            // instead of asking Google again. Scoped per user, ride and drop point.
+            $ride_cache_key = null;
+            if (is_numeric(request('ride_id')) && auth()->id()) {
+                $ride_cache_key = 'estimate_ride:' . (int) request('ride_id') . ':' . auth()->id() . ':'
+                    . round((float) request('drop_lat'), 4) . '|' . round((float) request('drop_lng'), 4) . ':'
+                    . md5(json_encode(request('drop_location')));
+            }
+            $ride_cached = $ride_cache_key ? \Illuminate\Support\Facades\Cache::get($ride_cache_key) : null;
 
-            $dropoff_distance_in_meters = $place_details['distance'];
-            $dropoff_time_in_seconds = $place_details['duration'];
-        } else {
-            $place_details = og_get_distance_matrix(request('pick_lat'), request('pick_lng'), request('drop_lat'), request('drop_lng'));
-            // distance in meter
-            $dropoff_distance_in_meters = distance_value_from_distance_matrix($place_details);
-            $dropoff_time_in_seconds = duration_value_from_distance_matrix($place_details);
-        }
-        $distance_in_unit = 0;
-        if ($dropoff_distance_in_meters) {
-            // Region->distance_unit == km ( convert meter to km )
-            $distance_in_unit = $dropoff_distance_in_meters / 1000;
-            // echo $dropoff_distance_in_meters;
-        }
+            if (is_array($ride_cached)) {
+                $dropoff_distance_in_meters = $ride_cached['distance'];
+                $dropoff_time_in_seconds = $ride_cached['duration'];
+            } else {
+                if( !empty(request('drop_location')) ) {
+                    $place_details = og_get_distance_matrix_multiple_destination(request('pick_lat'), request('pick_lng'), request('drop_lat'), request('drop_lng'), request('drop_location'));
 
-        // find driver
+                    $dropoff_distance_in_meters = $place_details['distance'];
+                    $dropoff_time_in_seconds = $place_details['duration'];
+                } else {
+                    $place_details = og_get_distance_matrix(request('pick_lat'), request('pick_lng'), request('drop_lat'), request('drop_lng'));
+                    // distance in meter
+                    $dropoff_distance_in_meters = distance_value_from_distance_matrix($place_details);
+                    $dropoff_time_in_seconds = duration_value_from_distance_matrix($place_details);
+                }
 
-        $coupon_code = request('coupon_code');
+                if ($ride_cache_key && $dropoff_distance_in_meters && $dropoff_time_in_seconds) {
+                    \Illuminate\Support\Facades\Cache::put($ride_cache_key, [
+                        'distance' => $dropoff_distance_in_meters,
+                        'duration' => $dropoff_time_in_seconds,
+                    ], now()->addMinutes(1));
+                }
+            }
+            $distance_in_unit = 0;
+            if ($dropoff_distance_in_meters) {
+                // Region->distance_unit == km ( convert meter to km )
+                $distance_in_unit = $dropoff_distance_in_meters / 1000;
+                // echo $dropoff_distance_in_meters;
+            }
+
+            // find driver
+
+            $coupon_code = request('coupon_code');
         
-        $coupon = Coupon::where('code', $coupon_code)->first();
-        // dd($coupon);
-        $status = isset($coupon_code) ? 400 : 200;
-        if($coupon != null) {
-            $status = Coupon::isValidCoupon($coupon);
-        }
-        if( $status != 200 ) {
-            $response = couponVerifyResponse($status);
-            return json_custom_response($response,$status);
-        }
-        $request['distance_in_unit'] = $distance_in_unit;
-        $request['dropoff_distance_in_meters'] = $dropoff_distance_in_meters ;
-        $request['dropoff_time_in_seconds'] = $dropoff_time_in_seconds ;
-        $request['coupon'] = $coupon;
+            $coupon = Coupon::where('code', $coupon_code)->first();
+            // dd($coupon);
+            $status = isset($coupon_code) ? 400 : 200;
+            if($coupon != null) {
+                $status = Coupon::isValidCoupon($coupon);
+            }
+            if( $status != 200 ) {
+                $response = couponVerifyResponse($status);
+                return json_custom_response($response,$status);
+            }
+            // A rider can only price against their own wallet credit.
+            if (auth()->user() && auth()->user()->user_type === 'rider') {
+                $request['rider_id'] = auth()->id();
+            }
+            $request['distance_in_unit'] = $distance_in_unit;
+            $request['dropoff_distance_in_meters'] = $dropoff_distance_in_meters ;
+            $request['dropoff_time_in_seconds'] = $dropoff_time_in_seconds ;
+            $request['coupon'] = $coupon;
 
-        $items = EstimateServiceResource::collection($service);
+            $items = EstimateServiceResource::collection($service);
 
-        $response = [
-            'pagination' => json_pagination_response($items),
-            'data' => $items,
-            'message' => $items->total() <= 0 ? __('message.service_not_available') : null
-        ];
+            $response = [
+                'pagination' => json_pagination_response($items),
+                'data' => $items,
+                'message' => $items->total() <= 0 ? __('message.service_not_available') : null
+            ];
         
-        return json_custom_response($response);
+            return json_custom_response($response);
+        } catch (\Throwable $e) {
+            Log::error('estimatePriceTime failed: ' . $e->getMessage(), [
+                'file'    => $e->getFile(),
+                'line'    => $e->getLine(),
+                'trace'   => $e->getTraceAsString(),
+                'request' => $request->all(),
+            ]);
+
+            return json_custom_response([
+                'status'  => false,
+                'message' => 'Something went wrong while estimating price and time.',
+            ], 500);
+        }
     }
 }

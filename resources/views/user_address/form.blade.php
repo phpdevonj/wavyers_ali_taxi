@@ -59,7 +59,7 @@
             }
             function initialize() {
                 var street_address_input = document.getElementById('street_address');
-                var street_address = new google.maps.places.Autocomplete(street_address_input);
+                var street_address = new google.maps.places.Autocomplete(street_address_input, { fields: ['address_components', 'formatted_address', 'geometry'] });
 
                 street_address.addListener('place_changed', function () {
                     var place = street_address.getPlace();
