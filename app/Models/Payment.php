@@ -23,7 +23,7 @@ class Payment extends Model
     ];
 
     public function rider() {
-        return $this->belongsTo(User::class, 'rider_id', 'id');
+        return $this->belongsTo(User::class, 'rider_id', 'id')->withTrashed();
     }
 
     public function riderequest(){

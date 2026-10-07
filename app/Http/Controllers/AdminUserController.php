@@ -139,7 +139,7 @@ class AdminUserController extends Controller
         $message = __('message.not_found_entry', ['name' => __('message.admin_user')]);
 
         if($user!='') {
-            $user->delete();
+            $user->forceDelete();
             $status = 'success';
             $message = __('message.delete_form', ['form' => __('message.admin_user')]);
         }

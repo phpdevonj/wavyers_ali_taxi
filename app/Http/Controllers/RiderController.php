@@ -72,7 +72,7 @@ class RiderController extends Controller
         $firebaseUser = $auth->createUser([
             'email' => $request->email,
             'password' => $plainPassword,
-        ]); 
+        ]);
 
         $uid = $firebaseUser->uid;
 
@@ -240,17 +240,12 @@ class RiderController extends Controller
         $message = __('message.not_found_entry', ['name' => __('message.rider')]);
 
         if($user!='') {
-            // Delete Stripe customer
-            if ($user->stripe_customer_id) {
-                $stripeResponse = deleteStripeCustomer($user->stripe_customer_id);
-                if (isset($stripeResponse['error'])) {
-                    return redirect()->back()->withErrors('Failed to delete Stripe customer.');
-                }
-            }
-            $user->delete();
-            // delete from firebase
-            $firebaseData = app('firebase.firestore')->database()->collection('users')->document($user->uid);
-            $firebaseData->delete();
+            // Deactivate: move to the "Deactivated Riders" section rather than
+            // erasing anything. Phone/email/username are scrambled so the same
+            // rider can sign up again as a brand new account; ride history,
+            // payments, wallet, etc. stay intact until an admin permanently
+            // deletes this record from the Deactivated Riders screen.
+            $user->deactivateAndAnonymize();
             $status = 'success';
             $message = __('message.delete_form', ['form' => __('message.rider')]);
         }

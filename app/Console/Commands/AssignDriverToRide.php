@@ -264,6 +264,24 @@ class AssignDriverToRide extends Command
             'reason' => 'Automatically canceled – no driver found within the search time limit'
         ]);
 
+        // Automatically refund the rider's full payment immediately — no driver was found, no manual/admin step
+        if ($ride->payment_type === 'card' && !empty($ride->held_payment_intent_id)) {
+            try {
+                $refundRes = releaseOrRefundStripePayment($ride->held_payment_intent_id);
+
+                if (!empty($refundRes['success'])) {
+                    if ($payment = $ride->payment) {
+                        $payment->update(['payment_status' => 'refunded']);
+                    }
+                    Log::channel('driver_assignment_regular')->info("Refunded/released held payment for auto-canceled Ride ID: {$ride->id} [Line: " . __LINE__ . "]");
+                } else {
+                    Log::channel('driver_assignment_regular')->error("Failed to refund/release held payment for Ride ID: {$ride->id} → " . json_encode($refundRes['error'] ?? []) . " [Line: " . __LINE__ . "]");
+                }
+            } catch (\Exception $e) {
+                Log::channel('driver_assignment_regular')->error("Error refunding/releasing held payment for Ride ID: {$ride->id} → " . $e->getMessage() . " [Line: " . __LINE__ . "]");
+            }
+        }
+
         // Add entry to ride history
         try {
             RideRequestHistory::create([

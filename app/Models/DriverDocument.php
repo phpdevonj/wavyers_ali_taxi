@@ -20,8 +20,8 @@ class DriverDocument extends Model implements HasMedia
     ];
 
     public function driver(){
-        return $this->belongsTo(User::class,'driver_id', 'id');
-    }   
+        return $this->belongsTo(User::class,'driver_id', 'id')->withTrashed();
+    }
     public function document(){
         return $this->belongsTo(Document::class,'document_id', 'id');
     }

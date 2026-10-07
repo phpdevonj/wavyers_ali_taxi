@@ -35,7 +35,12 @@
                 ->data('permission', [ 'rider add', 'rider edit'])
                 ->prepend('<i class="fas fa-plus-square"></i>')
                 ->link->attr(['class' => '']);
-        
+
+            $menu->rider->add('<span>'.__('message.deactivated_rider').'</span>', ['class' => 'sidebar-layout' ,'route' => 'deactivated-rider.index'])
+                ->data('permission', 'deactivated rider list')
+                ->prepend('<i class="fas fa-user-slash"></i>')
+                ->link->attr(['class' => '']);
+
         $menu->add('<span>'.__('message.region').'</span>', ['class' => ''])
             ->prepend('<i class="fas fa-globe"></i>')
             ->nickname('region')
@@ -95,6 +100,11 @@
             $menu->driver->add('<span>'.__('message.manage_driver_document').'</span>', ['class' => ( request()->is('driverdocument') || request()->is('driverdocument/*') ) ? 'sidebar-layout active' : 'sidebar-layout', 'route' => 'driverdocument.index'])
                 ->data('permission', ['driverdocument list'])
                 ->prepend('<i class="fas fa-plus-square"></i>')
+                ->link->attr(['class' => '']);
+
+            $menu->driver->add('<span>'.__('message.driver_reactivation_request').'</span>', ['class' => request()->is('driver-reactivation-request') ? 'sidebar-layout active' : 'sidebar-layout', 'route' => 'driver-reactivation-request.index'])
+                ->data('permission', ['driver reactivation request list'])
+                ->prepend('<i class="fas fa-undo"></i>')
                 ->link->attr(['class' => '']);
 
         $menu->add('<span>'.__('message.document').'</span>', ['class' => ''])

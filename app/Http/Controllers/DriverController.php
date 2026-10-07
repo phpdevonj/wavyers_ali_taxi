@@ -70,6 +70,15 @@ class DriverController extends Controller
             $request['fleet_id'] = auth()->user()->id;
         }
 
+        // A deactivated driver can only come back through an admin-approved
+        // Driver Reactivation Request, never by silently creating/reusing a row
+        // here (which would also collide on the DB-level unique email/username
+        // constraints the deactivated row still holds).
+        $deactivatedDriver = User::findTrashedUserByContactNumber($request->contact_number, 'driver');
+        if ($deactivatedDriver) {
+            return redirect()->back()->withErrors(__('message.driver_account_deactivated_admin'));
+        }
+
         // Create a customer in Stripe using the helper function
         $stripeCustomer = createStripeCustomer($request->email, $request->display_name, $request->contact_number, 'stripe');
         if(isset($stripeCustomer['id'])) {
@@ -84,7 +93,6 @@ class DriverController extends Controller
             'email' => $request->email,
             'password' => $plainPassword,
         ]);
-        
         $uid = $firebaseUser->uid;
 
         // Store data in Firestore
@@ -112,7 +120,7 @@ class DriverController extends Controller
         // Save Driver detail...
         $user->userDetail()->create($request->userDetail);
         $user->userBankAccount()->create($request->userBankAccount);
-        
+
         $user->userWallet()->create(['total_amount' => 0 ]);
 /*
         if($user->driverService()->count() > 0)
@@ -342,17 +350,11 @@ class DriverController extends Controller
         $message = __('message.not_found_entry', ['name' => __('message.driver')]);
 
         if($user!='') {
-             // Delete Stripe customer
-             if ($user->stripe_customer_id) {
-                $stripeResponse = deleteStripeCustomer($user->stripe_customer_id);
-                if (isset($stripeResponse['error'])) {
-                    return redirect()->back()->withErrors('Failed to delete Stripe customer.');
-                }
-            }
+            // Deactivate only: nothing is erased or anonymized, so a returning
+            // driver (by contact number/email) is recognized and can be offered
+            // reactivation via the Driver Reactivation Requests screen instead of
+            // creating a duplicate account.
             $user->delete();
-            // delete from firebase
-            $firebaseData = app('firebase.firestore')->database()->collection('users')->document($user->uid);
-            $firebaseData->delete();
             $status = 'success';
             $message = __('message.delete_form', ['form' => __('message.driver')]);
         }

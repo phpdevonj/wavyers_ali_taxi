@@ -160,6 +160,12 @@ class CheckRoutePermission
             'referralSettingsUpdate'      => 'setting edit',
             'getLanguageDriverMessage'    => 'setting list',
             'saveLanguageDriverMessage'   => 'setting edit',
+
+            // Deactivated accounts
+            'deactivated-rider.index'                  => 'deactivated rider list',
+            'deactivated-rider.destroy'                => 'deactivated rider delete',
+            'driver-reactivation-request.index'        => 'driver reactivation request list',
+            'driver-reactivation-request.resolve'      => 'driver reactivation request action',
         ];
         
     

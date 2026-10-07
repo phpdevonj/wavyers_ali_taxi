@@ -607,15 +607,21 @@ class RideRequestController extends Controller
                         // Rider canceled AFTER driver arrived → apply cancellation charges
                         $this->saveCancellationPayment($riderequest, $ride_status);
                     } else {
-                        // Rider canceled BEFORE driver arrived → just release hold (no charges)
+                        // Rider canceled BEFORE driver acceptance/arrival → automatically refund the full payment, no admin step
                         if ($riderequest->payment_type === 'card' && !empty($riderequest->held_payment_intent_id)) {
-                            cancelStripePayment($riderequest->held_payment_intent_id);
+                            $refundRes = releaseOrRefundStripePayment($riderequest->held_payment_intent_id);
+                            if (!empty($refundRes['success']) && $payment) {
+                                $payment->update(['payment_status' => 'refunded']);
+                            }
                         }
                     }
                 } else {
-                    // Driver canceled → always release hold (no rider charges)
+                    // Driver canceled → always refund the rider automatically (no rider charges)
                     if ($riderequest->payment_type === 'card' && !empty($riderequest->held_payment_intent_id)) {
-                        cancelStripePayment($riderequest->held_payment_intent_id);
+                        $refundRes = releaseOrRefundStripePayment($riderequest->held_payment_intent_id);
+                        if (!empty($refundRes['success']) && $payment) {
+                            $payment->update(['payment_status' => 'refunded']);
+                        }
                     }
                 }
 

@@ -6,6 +6,8 @@ use Illuminate\Foundation\Http\FormRequest;
 
 use Illuminate\Contracts\Validation\Validator;
 use Illuminate\Http\Exceptions\HttpResponseException;
+use Illuminate\Validation\Rule;
+use App\Models\User;
 
 
 class DriverRequest extends FormRequest
@@ -33,15 +35,15 @@ class DriverRequest extends FormRequest
             $user_id = auth()->user()->id ?? request()->id;
 
             $rules = [
-                'username' => 'required|unique:users,username,' . $user_id,
+                'username' => ['required', Rule::unique('users', 'username')->ignore($user_id)->whereNull('deleted_at')],
                 //'password' => 'required|min:8',
                 'first_name' => 'required',
                 'last_name' => 'required',
                 'date_of_birth' => 'required',
                 'license_expiration_date' => 'required',
                 'social_security_number' => 'required',
-                'email' => 'required|email|unique:users,email,' . $user_id,               
-                'contact_number' => 'required|max:20|unique:users,contact_number,' . $user_id,
+                'email' => ['required', 'email', Rule::unique('users', 'email')->ignore($user_id)->whereNull('deleted_at')],
+                'contact_number' => ['required', 'max:20', Rule::unique('users', 'contact_number')->ignore($user_id)->whereNull('deleted_at')],
             ];
 
             if (request()->isMethod('post')) {
@@ -56,22 +58,29 @@ class DriverRequest extends FormRequest
             switch ($method) {
                 case 'post':
                     $rules = [
-                        'username' => 'required|unique:users,username',
+                        'username' => ['required', Rule::unique('users', 'username')->whereNull('deleted_at')],
                         'password' => 'required|min:8',
-                        'email' => 'required|email|unique:users,email',
-                        'contact_number' => 'required|max:20|unique:users,contact_number',
+                        'email' => ['required', 'email', Rule::unique('users', 'email')->whereNull('deleted_at')],
+                        'contact_number' => ['required', 'max:20', Rule::unique('users', 'contact_number')->whereNull('deleted_at')],
                         'userDetail.car_model' => 'required|string|max:255',
                         'userDetail.car_color' => 'required|string|max:255',
-                        'userDetail.car_plate_number' => 'required|string|max:255|unique:user_details,car_plate_number',
+                        'userDetail.car_plate_number' => [
+                            'required', 'string', 'max:255',
+                            // A plate number is only "taken" while it belongs to a still-active
+                            // (non soft-deleted) driver, so a returning driver can reuse their own.
+                            Rule::unique('user_details', 'car_plate_number')->where(function ($query) {
+                                $query->whereIn('user_id', User::query()->whereNull('deleted_at')->pluck('id'));
+                            }),
+                        ],
                         'userDetail.car_production_year' => 'required|digits:4|integer|min:1900|max:' . date('Y'),
                     ];
                     break;
 
                 case 'patch':
                     $rules = [
-                        'username' => 'required|unique:users,username,' . $user_id,
-                        'email' => 'required|max:191|email|unique:users,email,' . $user_id,
-                        'contact_number' => 'max:20|unique:users,contact_number,' . $user_id,
+                        'username' => ['required', Rule::unique('users', 'username')->ignore($user_id)->whereNull('deleted_at')],
+                        'email' => ['required', 'max:191', 'email', Rule::unique('users', 'email')->ignore($user_id)->whereNull('deleted_at')],
+                        'contact_number' => ['max:20', Rule::unique('users', 'contact_number')->ignore($user_id)->whereNull('deleted_at')],
                     ];
                     break;
             }

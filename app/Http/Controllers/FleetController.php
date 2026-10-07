@@ -147,7 +147,7 @@ class FleetController extends Controller
         $message = __('message.not_found_entry', ['name' => __('message.fleet')]);
 
         if($user!='') {
-            $user->delete();
+            $user->forceDelete();
             $status = 'success';
             $message = __('message.delete_form', ['form' => __('message.fleet')]);
         }

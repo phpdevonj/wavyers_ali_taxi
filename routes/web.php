@@ -40,6 +40,8 @@ use App\Http\Controllers\WhyChooseController;
 use App\Http\Controllers\UserAddressController;
 use App\Http\Controllers\AdminUserController;
 use App\Http\Controllers\CarModelController;
+use App\Http\Controllers\DeactivatedRiderController;
+use App\Http\Controllers\DriverReactivationRequestController;
 
 /*
 |--------------------------------------------------------------------------
@@ -87,6 +89,10 @@ Route::group(['middleware' => ['auth', 'verified', 'admin', 'check.route.permiss
 	Route::resource('rider', RiderController::class);
 	Route::resource('driver', DriverController::class);
     Route::get('driver/list/{status?}', [ DriverController::class,'index' ])->name('driver.pending');
+
+    Route::resource('deactivated-rider', DeactivatedRiderController::class)->only(['index', 'destroy']);
+    Route::resource('driver-reactivation-request', DriverReactivationRequestController::class)->only(['index']);
+    Route::post('driver-reactivation-request/{id}/resolve', [DriverReactivationRequestController::class, 'resolve'])->name('driver-reactivation-request.resolve');
 
 	Route::resource('fleet', FleetController::class);
 	Route::resource('additionalfees', AdditionalFeesController::class);

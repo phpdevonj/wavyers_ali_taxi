@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Laravel\Sanctum\HasApiTokens;
@@ -14,7 +15,7 @@ use Illuminate\Support\Facades\DB;
 
 class User extends Authenticatable implements HasMedia
 {
-    use HasApiTokens, HasFactory, Notifiable, HasRoles, InteractsWithMedia;
+    use HasApiTokens, HasFactory, Notifiable, HasRoles, InteractsWithMedia, SoftDeletes;
 
     /**
      * The attributes that are mass assignable.
@@ -138,23 +139,58 @@ class User extends Authenticatable implements HasMedia
     protected static function boot(){
         parent::boot();
         static::deleted(function ($row) {
-            $row->userDetail()->delete();
-            $row->userWithdraw()->delete();
-            $row->userWallet()->delete();
-            switch ($row->user_type) {
-                case 'rider':
-                    $row->riderRideRequestDetail()->delete();
-                    break;
-                case 'driver':
-                    $row->userBankAccount()->delete();
-                    $row->driverDocument()->delete();
-                    $row->driverRideRequestDetail()->delete();
-                    break;
-                default:
-                    # code...
-                    break;
+            // Only clean up related records on a permanent (force) delete.
+            // A soft delete (account deactivation) must leave everything intact.
+            if (! $row->isForceDeleting()) {
+                return;
             }
+
+            // user_details has no DB-level foreign key, so it must be cleaned up
+            // here. Ride history, payments, wallet, withdraw requests, etc. are
+            // intentionally left alone: their foreign keys are ON DELETE SET NULL
+            // (not cascade), so those records survive a permanent delete for
+            // legal, tax and safety purposes. userBankAccount/driverDocument/
+            // userAddresses/referrals already cascade-delete at the DB level.
+            $row->userDetail()->delete();
         });
+    }
+
+    /**
+     * Find a soft-deleted (deactivated) rider or driver by their contact number.
+     * Used to detect a returning driver so they can be offered reactivation
+     * instead of creating a duplicate account.
+     */
+    public static function findTrashedUserByContactNumber(string $contactNumber, string $userType)
+    {
+        return static::onlyTrashed()
+            ->where('user_type', $userType)
+            ->where('contact_number', $contactNumber)
+            ->first();
+    }
+
+    /**
+     * Deactivate this (rider) account: scramble the identifiers that have a
+     * DB-level unique constraint (or are otherwise personally identifying) so
+     * the same phone number/email/username can be used to sign up again as a
+     * brand new, separate account, then soft delete. Ride history, payments,
+     * wallet, etc. are left untouched and remain visible to admins.
+     */
+    public function deactivateAndAnonymize()
+    {
+        $this->fill([
+            'contact_number' => $this->contact_number
+                ? hash('sha256', $this->contact_number) . '-' . $this->id
+                : $this->contact_number,
+            'email' => 'deleted-user-' . $this->id . '@deleted.invalid',
+            'username' => 'deleted-user-' . $this->id,
+        ])->save();
+
+        $this->delete();
+    }
+
+    public function reactivationRequests()
+    {
+        return $this->hasMany(DriverReactivationRequest::class, 'driver_id', 'id');
     }
 
     public function getPayment(){

@@ -46,11 +46,11 @@ class RideRequest extends Model
     ];
     
     public function rider() {
-        return $this->belongsTo( User::class, 'rider_id', 'id');
+        return $this->belongsTo( User::class, 'rider_id', 'id')->withTrashed();
     }
 
     public function driver() {
-        return $this->belongsTo( User::class, 'driver_id', 'id');
+        return $this->belongsTo( User::class, 'driver_id', 'id')->withTrashed();
     }
 
     public function riderequest_in_driver() {

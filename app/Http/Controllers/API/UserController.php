@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use App\Models\User;
 use App\Models\DriverDocument;
+use App\Models\DriverReactivationRequest;
 use App\Http\Requests\UserRequest;
 use App\Http\Resources\UserResource;
 use App\Http\Resources\DriverResource;
@@ -63,7 +64,7 @@ class UserController extends Controller
         $input['display_name'] = $input['first_name']." ".$input['last_name'];
         $input['last_actived_at'] = now();
         $input['contact_number'] = trim($input['country_code']) . trim($input['contact_number']);
-        
+
         if(isset($input['player_id'])) {
             $input['player_id'] = $input['player_id'];
         }
@@ -76,6 +77,10 @@ class UserController extends Controller
             return json_message_response('Failed to create Stripe customer.',400);
         }
 
+        // A rider who previously deleted their account is always issued a brand
+        // new, separate account. Their old (deactivated) account is left exactly
+        // as it was; its phone/email/username were already scrambled on
+        // deactivation, so this can never collide with it.
         $user = User::create($input);
         $user->assignRole($input['user_type']);
 
@@ -83,21 +88,21 @@ class UserController extends Controller
             $user->userDetail()->create($request->user_detail);
         }
 
-        // Create referral record 
+        // Create referral record
         if ($referrer) {
             createReferral($user->referred_by, $user->id, $validReferral);
             $referral_condition = SettingData('referral', 'referral_reward_condition') ?? null;
             if(isset($referral_condition) && $referral_condition == "on_registration"){
                 // award referral bonus if applicable
                 processReferral($user->referred_by, $user->id);
-            }            
+            }
         }
 
         $message = __('message.save_form',['form' => __('message.'.$input['user_type']) ]);
         $user->api_token = $user->createToken('auth_token')->plainTextToken;
         $user->profile_image = getSingleMedia($user, 'profile_image', null);
         // send notification to rider when sign up
-        $coupon = Coupon::where(['coupon_type' => 'new_user', 'status' => 1])->first();        
+        $coupon = Coupon::where(['coupon_type' => 'new_user', 'status' => 1])->first();
         if (!empty($coupon)) {
             $user_notification_data = [
                 'id' => $user->id,
@@ -131,14 +136,28 @@ class UserController extends Controller
             $input['contact_number'] =  trim($input['contact_number']);
         }else{
             $input['contact_number'] = trim($input['country_code']) . trim($input['contact_number']);
-        }        
+        }
+
+        // A deactivated driver must not get a second account created (or silently
+        // reused) on sign up: surface a reactivation prompt instead. The driver's
+        // contact number is left untouched on deactivation (unlike a rider's)
+        // specifically so this match still works.
+        $deactivatedDriver = User::findTrashedUserByContactNumber($input['contact_number'], $input['user_type']);
+        if ($deactivatedDriver) {
+            return json_custom_response([
+                'status' => false,
+                'deactivated' => true,
+                'message' => __('message.driver_account_deactivated'),
+            ]);
+        }
+
         $user = User::create($input);
         $user->assignRole($input['user_type']);
 
         if( $request->has('user_detail') && $request->user_detail != null ) {
             $user->userDetail()->create($request->user_detail);
         }
-        
+
         if( $request->has('user_bank_account') && $request->user_bank_account != null ) {
             $user->userBankAccount()->create($request->user_bank_account);
         }
@@ -235,8 +254,30 @@ class UserController extends Controller
             }
             else{
                 Log::channel('custom_api')->warning('[LOGIN] Authentication failed', ['email' => $request->email,'line' => __LINE__]);
+
+                if (request('user_type') === 'driver') {
+                    $deactivatedDriver = User::onlyTrashed()
+                        ->where('user_type', 'driver')
+                        ->where(function ($query) {
+                            $query->where('email', request('email'));
+                            if (request('contact_number')) {
+                                $query->orWhere('contact_number', request('contact_number'));
+                            }
+                        })
+                        ->first();
+
+                    if ($deactivatedDriver) {
+                        Log::channel('custom_api')->info('[LOGIN] Deactivated driver attempted login', ['email' => $request->email,'line' => __LINE__]);
+                        return json_custom_response([
+                            'status' => false,
+                            'deactivated' => true,
+                            'message' => __('message.driver_account_deactivated'),
+                        ]);
+                    }
+                }
+
                 $message = __('auth.failed');
-                
+
                 return json_message_response($message,400);
             }
         } catch (\Exception $e) {
@@ -698,22 +739,68 @@ class UserController extends Controller
         $message = __('message.not_found_entry',['name' => __('message.account') ]);
 
         if( $user != '' ) {
-            // Delete Stripe customer
-            if ($user->stripe_customer_id) {
-                $stripeResponse = deleteStripeCustomer($user->stripe_customer_id);
-                if (isset($stripeResponse['error'])) {
-                    return json_message_response('Failed to delete Stripe customer.',400);
+            if ($user->user_type === 'rider') {
+                // Deactivate: scramble phone/email/username so this number/email
+                // can be used to sign up as a brand new account, then soft delete.
+                // Ride history, payments, wallet, etc. stay intact for admins; the
+                // account is only permanently erased if an admin chooses to.
+                $user->deactivateAndAnonymize();
+            } elseif ($user->user_type === 'driver') {
+                // Deactivate only, identifiers left as-is: a driver who tries to
+                // sign up or log in again with the same number/email is recognized
+                // and offered reactivation instead of a new account.
+                $user->delete();
+            } else {
+                // Delete Stripe customer
+                if ($user->stripe_customer_id) {
+                    $stripeResponse = deleteStripeCustomer($user->stripe_customer_id);
+                    if (isset($stripeResponse['error'])) {
+                        return json_message_response('Failed to delete Stripe customer.',400);
+                    }
                 }
+                $user->forceDelete();
             }
-            $user->delete();
             $message = __('message.account_deleted');
         }
-        
+
         return json_custom_response(['message'=> $message, 'status' => true]);
     }
 
     public function validateDriverStepOne(DriverStepOneRequest $request)
     {
         return json_custom_response(['status' => true]);
+    }
+
+    /**
+     * A deactivated driver, after being told their account is deactivated
+     * (on login or sign-up attempt), can ask to have it reactivated. This
+     * files the request for an admin to action in the "Driver Reactivation
+     * Requests" section - it does not reactivate the account by itself.
+     */
+    public function requestDriverReactivation(Request $request)
+    {
+        $request->validate([
+            'contact_number' => 'required|max:20',
+        ]);
+
+        $deactivatedDriver = User::findTrashedUserByContactNumber($request->contact_number, 'driver');
+
+        if (! $deactivatedDriver) {
+            return json_message_response(__('message.not_found_entry', ['name' => __('message.driver')]), 404);
+        }
+
+        $pendingRequest = DriverReactivationRequest::where('driver_id', $deactivatedDriver->id)
+            ->where('status', 'pending')
+            ->first();
+
+        if (! $pendingRequest) {
+            DriverReactivationRequest::create([
+                'driver_id' => $deactivatedDriver->id,
+                'contact_number' => $deactivatedDriver->contact_number,
+                'status' => 'pending',
+            ]);
+        }
+
+        return json_message_response(__('message.reactivation_request_submitted'), 200);
     }
 }

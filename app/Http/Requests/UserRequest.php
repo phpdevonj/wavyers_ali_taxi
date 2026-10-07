@@ -39,10 +39,10 @@ class UserRequest extends FormRequest
         $user_type = auth()->user()->user_type ?? request()->user_type;
 
         $rules = [
-            'username'  => 'required|unique:users,username,'.$user_id,
-            'email'     => 'required|email|unique:users,email,'.$user_id,
+            'username'  => ['required', Rule::unique('users', 'username')->ignore($user_id)->whereNull('deleted_at')],
+            'email'     => ['required', 'email', Rule::unique('users', 'email')->ignore($user_id)->whereNull('deleted_at')],
             'contact_number' => 'nullable|max:20',
-            'full_contact_number' => 'nullable|unique:users,contact_number,' . $user_id,
+            'full_contact_number' => ['nullable', Rule::unique('users', 'contact_number')->ignore($user_id)->whereNull('deleted_at')],
             'profile_image' => 'nullable|image|mimes:jpeg,png,jpg,gif,webp|max:1024',
             'device_type' => [
                 Rule::requiredIf($user_type === 'rider'),
