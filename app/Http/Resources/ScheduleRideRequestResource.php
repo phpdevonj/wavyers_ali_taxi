@@ -143,7 +143,7 @@ class ScheduleRideRequestResource extends JsonResource
         ];
 
         // caclulate ride
-        $ridefee = calculateRideFares($dropoff_distance_in_km, $this->start_latitude, $this->start_longitude, $this->end_latitude, $this->end_longitude, $multi_location,$dropoff_time_in_seconds, $service_data, $this->coupon_data,$surge_price,$this->scheduled_at, $is_credit_used, $this->rider_id);
+        $ridefee = calculateRideFares($dropoff_distance_in_km, $this->start_latitude, $this->start_longitude, $this->end_latitude, $this->end_longitude, $multi_location,$dropoff_time_in_seconds, $service_data, $this->coupon_data,$surge_price,$this->datetime, $is_credit_used, $this->rider_id);
 
         return array_merge($schedule_ride_data, $ridefee);
     }

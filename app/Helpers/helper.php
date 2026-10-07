@@ -1305,10 +1305,20 @@ function calculateRideFares($distance_in_unit, $pickupLat, $pickupLng, $dropLat,
 
     $surge_amount = 0;
     $surge_price_setting_value = SettingData('ride', 'surge_price') ?? null;
-    if ($surge_price_setting_value == 1 && isset($surge_price) && (is_object($surge_price) || is_array($surge_price))) {
-        
+
+    // $ride_datetime arrives as 'Y-m-d H:i' from the estimate/dispatch flows but as a stored
+    // 'Y-m-d H:i:s' value (or null) from scheduled rides, so parse it leniently.
+    $rideTimeOnly = null;
+    if (!empty($ride_datetime)) {
         $timezone = $service->region->timezone ?? 'UTC';
-        $rideTimeOnly = \Carbon\Carbon::createFromFormat('Y-m-d H:i', $ride_datetime, $timezone)->format('H:i');
+        try {
+            $rideTimeOnly = (new \DateTime($ride_datetime, new \DateTimeZone($timezone)))->format('H:i');
+        } catch (\Throwable $e) {
+            $rideTimeOnly = null;
+        }
+    }
+
+    if ($surge_price_setting_value == 1 && isset($surge_price) && (is_object($surge_price) || is_array($surge_price)) && $rideTimeOnly) {
 
         foreach ($surge_price->from_time as $index => $from_time) {
             $to_time = $surge_price->to_time[$index];
@@ -2078,6 +2088,52 @@ if (!function_exists('cancelStripePayment')) {
             'success' => false,
             'error'   => $response->json(),
         ];
+    }
+}
+
+if (!function_exists('refundStripePayment')) {
+    function refundStripePayment($payment_intent_id, $amount = null)
+    {
+        $stripeSecretKey = getStripeSecretKey();
+
+        $payload = ['payment_intent' => $payment_intent_id];
+        if ($amount) {
+            $payload['amount'] = (int) $amount;
+        }
+
+        $response = Http::withToken($stripeSecretKey)->asForm()
+            ->post('https://api.stripe.com/v1/refunds', $payload);
+
+        if ($response->successful()) {
+            $result = $response->json();
+            return [
+                'success' => ($result['status'] ?? '') === 'succeeded',
+                'data'    => $result,
+            ];
+        }
+
+        return [
+            'success' => false,
+            'error'   => $response->json(),
+        ];
+    }
+}
+
+if (!function_exists('releaseOrRefundStripePayment')) {
+    /**
+     * Automatically releases a held (uncaptured) PaymentIntent, or — if it was
+     * already captured by the time this runs — issues a full Stripe refund instead.
+     * Used to immediately return the rider's full payment with no manual/admin step.
+     */
+    function releaseOrRefundStripePayment($payment_intent_id)
+    {
+        $cancelRes = cancelStripePayment($payment_intent_id);
+
+        if (!empty($cancelRes['success'])) {
+            return $cancelRes;
+        }
+
+        return refundStripePayment($payment_intent_id);
     }
 }
 
