@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\DataTables\DriverReactivationRequestDataTable;
 use App\Models\DriverReactivationRequest;
+use App\Notifications\DriverReactivatedNotification;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 
@@ -64,6 +65,19 @@ class DriverReactivationRequestController extends Controller
             case 'reactivate':
                 if ($driver) {
                     $driver->restore();
+
+                    // Tell the driver they can log in again. A mail failure must
+                    // not undo or block the reactivation itself.
+                    if ($driver->email) {
+                        try {
+                            $driver->notify(new DriverReactivatedNotification());
+                        } catch (\Throwable $e) {
+                            Log::warning('Failed to send driver reactivation email', [
+                                'user_id' => $driver->id,
+                                'error' => $e->getMessage(),
+                            ]);
+                        }
+                    }
                 }
                 $reactivationRequest->status = 'reactivated';
                 break;
