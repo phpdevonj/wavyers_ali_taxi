@@ -344,6 +344,8 @@ return array(
         'too_late_to_cancel_scheduled_ride' => 'Too late for cancel schedule ride.',
         'scheduled_ride_cancelled_successfully' => 'Scheduled ride cancelled successfully.',
         'unauthorized_action' => 'Unauthorized user for performing action.',
+        'driver_not_verified' => 'You are not verified driver. Please wait for verification.',
+        'driver_not_active' => 'Your account is not active. Please wait for activation.',
         'driver_accepted' => 'Driver Accepted',
         'driver_assigned' => 'Driver already assigned to ride request.',
         'driver_assigned_to_schedule_riderequest' => 'Driver assigned to schedule ride request.',
