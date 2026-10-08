@@ -57,16 +57,23 @@
          }
       }
 
-      $('#submit-btn').on('click', function(e) {
-         e.preventDefault();
+   //    $('#submit-btn').on('click', function(e) {
+   //       e.preventDefault();
 
-             $('#button-loader').show();
-             $('#submit-btn').prop('disabled', true);
+   //           $('#button-loader').show();
+   //           $('#submit-btn').prop('disabled', true);
 
-             setTimeout(function() {
-                 $('form').submit();
-             }, 1000);
-     });
+   //           setTimeout(function() {
+   //               $('form').submit();
+   //           }, 1000);
+   //   });
+
+     $('#submit-btn').closest('form').on('submit', function(e) {
+         if (this.checkValidity()) {
+            $('#button-loader').show();
+            $('#submit-btn').prop('disabled', true);
+         }
+      });
 
       function formValidation(formId, rules, messages) {
          $(formId).validate({
