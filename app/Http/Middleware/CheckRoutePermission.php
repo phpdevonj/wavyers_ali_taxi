@@ -164,6 +164,8 @@ class CheckRoutePermission
             // Deactivated accounts
             'deactivated-rider.index'                  => 'deactivated rider list',
             'deactivated-rider.destroy'                => 'deactivated rider delete',
+            'deactivated-driver.index'                 => 'deactivated driver list',
+            'deactivated-driver.destroy'               => 'deactivated driver delete',
             'driver-reactivation-request.index'        => 'driver reactivation request list',
             'driver-reactivation-request.resolve'      => 'driver reactivation request action',
         ];

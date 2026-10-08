@@ -138,7 +138,9 @@ class ProcessScheduledRides extends Command
         ];
         
         $driver->notify(new CommonNotification($notification_data['type'], $notification_data));
+        $ride->driver->update(['is_online' => 1]);
         $ride->driver->update(['is_available' => 0]);
+        
         $ride->update(['status' => 'accepted']);
 
         Log::channel('process_schedule_rides')->info("Scheduled ride notification sent to driver #{$driver->id} for ride #{$ride->id} [Line: " . __LINE__ . "]");

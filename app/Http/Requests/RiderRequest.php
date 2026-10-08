@@ -35,16 +35,16 @@ class RiderRequest extends FormRequest
         switch ($method) {
             case 'post':
                 $rules = [
-                    'username' => ['required', Rule::unique('users', 'username')->whereNull('deleted_at')],
+                    'username' => ['required', Rule::unique('users', 'username')],
                     'password' => 'required|min:8',
-                    'email' => ['required', 'email', Rule::unique('users', 'email')->whereNull('deleted_at')],
+                    'email' => ['required', 'email', Rule::unique('users', 'email')],
                     'contact_number' => ['max:20', Rule::unique('users', 'contact_number')->whereNull('deleted_at')],
                 ];
                 break;
             case 'patch':
                 $rules = [
-                    'username'  => ['required', Rule::unique('users', 'username')->ignore($user_id)->whereNull('deleted_at')],
-                    'email'     => ['required', 'email', Rule::unique('users', 'email')->ignore($user_id)->whereNull('deleted_at')],
+                    'username'  => ['required', Rule::unique('users', 'username')->ignore($user_id)],
+                    'email'     => ['required', 'email', Rule::unique('users', 'email')->ignore($user_id)],
                     'contact_number' => ['max:20', Rule::unique('users', 'contact_number')->ignore($user_id)->whereNull('deleted_at')],
                 ];
                 break;

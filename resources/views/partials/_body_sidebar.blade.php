@@ -102,6 +102,11 @@
                 ->prepend('<i class="fas fa-plus-square"></i>')
                 ->link->attr(['class' => '']);
 
+            $menu->driver->add('<span>'.__('message.deactivated_driver').'</span>', ['class' => request()->is('deactivated-driver') ? 'sidebar-layout active' : 'sidebar-layout', 'route' => 'deactivated-driver.index'])
+                ->data('permission', 'deactivated driver list')
+                ->prepend('<i class="fas fa-user-slash"></i>')
+                ->link->attr(['class' => '']);
+
             $menu->driver->add('<span>'.__('message.driver_reactivation_request').'</span>', ['class' => request()->is('driver-reactivation-request') ? 'sidebar-layout active' : 'sidebar-layout', 'route' => 'driver-reactivation-request.index'])
                 ->data('permission', ['driver reactivation request list'])
                 ->prepend('<i class="fas fa-undo"></i>')

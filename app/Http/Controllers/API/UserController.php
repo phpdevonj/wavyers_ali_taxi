@@ -142,7 +142,7 @@ class UserController extends Controller
         // reused) on sign up: surface a reactivation prompt instead. The driver's
         // contact number is left untouched on deactivation (unlike a rider's)
         // specifically so this match still works.
-        $deactivatedDriver = User::findTrashedUserByContactNumber($input['contact_number'], $input['user_type']);
+        $deactivatedDriver = User::findTrashedDriverByIdentity($input['contact_number'], $input['email'] ?? null, $input['username'] ?? null);
         if ($deactivatedDriver) {
             return json_custom_response([
                 'status' => false,
@@ -256,6 +256,9 @@ class UserController extends Controller
                 Log::channel('custom_api')->warning('[LOGIN] Authentication failed', ['email' => $request->email,'line' => __LINE__]);
 
                 if (request('user_type') === 'driver') {
+                    // Only reveal "deactivated" to someone who proves they own the
+                    // account (correct password), so this can't be used to probe
+                    // which emails/numbers belong to deactivated drivers.
                     $deactivatedDriver = User::onlyTrashed()
                         ->where('user_type', 'driver')
                         ->where(function ($query) {
@@ -265,6 +268,10 @@ class UserController extends Controller
                             }
                         })
                         ->first();
+
+                    if ($deactivatedDriver && ! Hash::check((string) request('password'), $deactivatedDriver->password)) {
+                        $deactivatedDriver = null;
+                    }
 
                     if ($deactivatedDriver) {
                         Log::channel('custom_api')->info('[LOGIN] Deactivated driver attempted login', ['email' => $request->email,'line' => __LINE__]);
@@ -739,6 +746,10 @@ class UserController extends Controller
         $message = __('message.not_found_entry',['name' => __('message.account') ]);
 
         if( $user != '' ) {
+            if (in_array($user->user_type, ['rider', 'driver']) && $user->hasInFlightRide()) {
+                return json_message_response(__('message.account_delete_active_ride'), 400);
+            }
+
             if ($user->user_type === 'rider') {
                 // Deactivate: scramble phone/email/username so this number/email
                 // can be used to sign up as a brand new account, then soft delete.
@@ -749,7 +760,7 @@ class UserController extends Controller
                 // Deactivate only, identifiers left as-is: a driver who tries to
                 // sign up or log in again with the same number/email is recognized
                 // and offered reactivation instead of a new account.
-                $user->delete();
+                $user->deactivate();
             } else {
                 // Delete Stripe customer
                 if ($user->stripe_customer_id) {
@@ -785,20 +796,20 @@ class UserController extends Controller
 
         $deactivatedDriver = User::findTrashedUserByContactNumber($request->contact_number, 'driver');
 
-        if (! $deactivatedDriver) {
-            return json_message_response(__('message.not_found_entry', ['name' => __('message.driver')]), 404);
-        }
+        // Same answer whether or not a deactivated account matches, so this
+        // unauthenticated endpoint can't be used to find out who is a driver.
+        if ($deactivatedDriver) {
+            $pendingRequest = DriverReactivationRequest::where('driver_id', $deactivatedDriver->id)
+                ->where('status', 'pending')
+                ->first();
 
-        $pendingRequest = DriverReactivationRequest::where('driver_id', $deactivatedDriver->id)
-            ->where('status', 'pending')
-            ->first();
-
-        if (! $pendingRequest) {
-            DriverReactivationRequest::create([
-                'driver_id' => $deactivatedDriver->id,
-                'contact_number' => $deactivatedDriver->contact_number,
-                'status' => 'pending',
-            ]);
+            if (! $pendingRequest) {
+                DriverReactivationRequest::create([
+                    'driver_id' => $deactivatedDriver->id,
+                    'contact_number' => $deactivatedDriver->contact_number,
+                    'status' => 'pending',
+                ]);
+            }
         }
 
         return json_message_response(__('message.reactivation_request_submitted'), 200);

@@ -74,7 +74,7 @@ class DriverController extends Controller
         // Driver Reactivation Request, never by silently creating/reusing a row
         // here (which would also collide on the DB-level unique email/username
         // constraints the deactivated row still holds).
-        $deactivatedDriver = User::findTrashedUserByContactNumber($request->contact_number, 'driver');
+        $deactivatedDriver = User::findTrashedDriverByIdentity($request->contact_number, $request->email, $request->username);
         if ($deactivatedDriver) {
             return redirect()->back()->withErrors(__('message.driver_account_deactivated_admin'));
         }
@@ -349,12 +349,20 @@ class DriverController extends Controller
         $status = 'errors';
         $message = __('message.not_found_entry', ['name' => __('message.driver')]);
 
+        if($user!='' && $user->hasInFlightRide()) {
+            $message = __('message.account_delete_active_ride');
+            if(request()->ajax()) {
+                return response()->json(['status' => false, 'message' => $message ]);
+            }
+            return redirect()->back()->withErrors($message);
+        }
+
         if($user!='') {
             // Deactivate only: nothing is erased or anonymized, so a returning
             // driver (by contact number/email) is recognized and can be offered
             // reactivation via the Driver Reactivation Requests screen instead of
             // creating a duplicate account.
-            $user->delete();
+            $user->deactivate();
             $status = 'success';
             $message = __('message.delete_form', ['form' => __('message.driver')]);
         }

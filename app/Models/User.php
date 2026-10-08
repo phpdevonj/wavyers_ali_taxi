@@ -156,35 +156,158 @@ class User extends Authenticatable implements HasMedia
     }
 
     /**
-     * Find a soft-deleted (deactivated) rider or driver by their contact number.
-     * Used to detect a returning driver so they can be offered reactivation
-     * instead of creating a duplicate account.
+     * Ride statuses in which a rider and driver are actively together. An
+     * account cannot be deactivated while one of these is open.
      */
-    public static function findTrashedUserByContactNumber(string $contactNumber, string $userType)
+    const IN_FLIGHT_RIDE_STATUSES = ['accepted', 'arriving', 'arrived', 'in_progress'];
+
+    /**
+     * Digits-only form of a phone number, so "+1 555-0002" and "15550002" compare equal.
+     */
+    public static function normalizeContactNumber($number): string
     {
-        return static::onlyTrashed()
-            ->where('user_type', $userType)
-            ->where('contact_number', $contactNumber)
-            ->first();
+        return preg_replace('/\D+/', '', (string) $number);
     }
 
     /**
-     * Deactivate this (rider) account: scramble the identifiers that have a
-     * DB-level unique constraint (or are otherwise personally identifying) so
-     * the same phone number/email/username can be used to sign up again as a
-     * brand new, separate account, then soft delete. Ride history, payments,
-     * wallet, etc. are left untouched and remain visible to admins.
+     * Find a soft-deleted (deactivated) driver by contact number. Matches on
+     * digits only; a number typed without its country code still matches when
+     * it identifies exactly one deactivated account.
+     */
+    public static function findTrashedUserByContactNumber(string $contactNumber, string $userType)
+    {
+        $needle = static::normalizeContactNumber($contactNumber);
+        if ($needle === '') {
+            return null;
+        }
+
+        $sql = "REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(contact_number, '+', ''), ' ', ''), '-', ''), '(', ''), ')', '')";
+
+        $exact = static::onlyTrashed()->where('user_type', $userType)->whereRaw("$sql = ?", [$needle])->first();
+        if ($exact) {
+            return $exact;
+        }
+
+        $suffix = static::onlyTrashed()->where('user_type', $userType)->whereRaw("$sql LIKE ?", ['%' . $needle])->limit(2)->get();
+
+        return $suffix->count() === 1 ? $suffix->first() : null;
+    }
+
+    /**
+     * Find a deactivated driver by any identifier that is still held on the
+     * (un-anonymized) row: contact number, email or username. Email and
+     * username are unique in the database, so a returning driver using a
+     * different phone must still be recognised instead of hitting a 500.
+     */
+    public static function findTrashedDriverByIdentity($contactNumber = null, $email = null, $username = null)
+    {
+        $driver = $contactNumber ? static::findTrashedUserByContactNumber((string) $contactNumber, 'driver') : null;
+        if ($driver) {
+            return $driver;
+        }
+
+        if (! $email && ! $username) {
+            return null;
+        }
+
+        return static::onlyTrashed()->where('user_type', 'driver')->where(function ($q) use ($email, $username) {
+            if ($email) {
+                $q->orWhere('email', $email);
+            }
+            if ($username) {
+                $q->orWhere('username', $username);
+            }
+        })->first();
+    }
+
+    /**
+     * True when this account is part of a ride that is under way right now.
+     */
+    public function hasInFlightRide(): bool
+    {
+        $column = $this->user_type === 'driver' ? 'driver_id' : 'rider_id';
+
+        return RideRequest::where($column, $this->id)->whereIn('status', self::IN_FLIGHT_RIDE_STATUSES)->exists();
+    }
+
+    /**
+     * Clean up not-yet-started rides so they are not dispatched for, or to, an
+     * account that is about to disappear from the app.
+     *  - rider: open/scheduled rides are cancelled and held card payments released.
+     *  - driver: scheduled rides assigned to them are un-assigned so the
+     *    scheduler picks another driver.
+     */
+    public function releaseOpenRides(): void
+    {
+        if ($this->user_type === 'rider') {
+            $rides = RideRequest::where('rider_id', $this->id)
+                ->whereIn('status', ['new_ride_requested', 'bid_placed', 'pending', 'scheduled', 'driver_accepted'])
+                ->get();
+
+            foreach ($rides as $ride) {
+                if ($ride->payment_type === 'card' && ! empty($ride->held_payment_intent_id)) {
+                    try {
+                        $refund = releaseOrRefundStripePayment($ride->held_payment_intent_id);
+                        if (! empty($refund['success']) && ($payment = $ride->payment)) {
+                            $payment->update(['payment_status' => 'refunded']);
+                        }
+                    } catch (\Throwable $e) {
+                        \Illuminate\Support\Facades\Log::warning('Failed to release held payment while deactivating rider', ['ride_id' => $ride->id, 'error' => $e->getMessage()]);
+                    }
+                }
+
+                $ride->update([
+                    'status' => 'canceled',
+                    'cancel_by' => 'rider',
+                    'reason' => 'Rider account was deleted',
+                ]);
+            }
+        } elseif ($this->user_type === 'driver') {
+            RideRequest::where('driver_id', $this->id)
+                ->whereIn('status', ['scheduled', 'driver_accepted'])
+                ->update(['driver_id' => null, 'status' => 'scheduled', 'riderequest_in_driver_id' => null]);
+
+            RideRequest::where('riderequest_in_driver_id', $this->id)
+                ->whereIn('status', ['new_ride_requested', 'scheduled'])
+                ->update(['riderequest_in_driver_id' => null]);
+        }
+    }
+
+    /**
+     * Take the account out of service without erasing anything: revoke API
+     * tokens, go offline/unavailable, release open rides, then soft delete.
+     */
+    public function deactivate()
+    {
+        $this->releaseOpenRides();
+        $this->tokens()->delete();
+        $this->forceFill(['is_online' => 0, 'is_available' => 0])->save();
+
+        $this->delete();
+    }
+
+    /**
+     * Deactivate this (rider) account: replace the identifiers that have a
+     * DB-level unique constraint (or are personally identifying) so the same
+     * phone/email/username can sign up again as a brand new, separate account.
+     * The phone number is stored as a keyed hash (HMAC-SHA256 with the app key)
+     * so it cannot be brute-forced back from the database alone. Ride history,
+     * payments, wallet, etc. are left untouched and remain visible to admins.
      */
     public function deactivateAndAnonymize()
     {
+        $this->releaseOpenRides();
+
         $this->fill([
             'contact_number' => $this->contact_number
-                ? hash('sha256', $this->contact_number) . '-' . $this->id
+                ? hash_hmac('sha256', $this->contact_number, config('app.key')) . '-' . $this->id
                 : $this->contact_number,
             'email' => 'deleted-user-' . $this->id . '@deleted.invalid',
             'username' => 'deleted-user-' . $this->id,
-        ])->save();
+        ]);
+        $this->forceFill(['is_online' => 0, 'is_available' => 0])->save();
 
+        $this->tokens()->delete();
         $this->delete();
     }
 

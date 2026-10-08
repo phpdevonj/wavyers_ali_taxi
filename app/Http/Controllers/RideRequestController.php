@@ -242,6 +242,7 @@ class RideRequestController extends Controller
                 'ride_request_bids.notes',
                 DB::raw("($unit_value * acos(cos(radians($latitude)) * cos(radians(users.latitude)) * cos(radians(users.longitude) - radians($longitude)) + sin(radians($latitude)) * sin(radians(users.latitude)))) AS distance")
             )
+            ->whereNull('users.deleted_at')
             ->where('ride_request_bids.is_bid_accept', 0)
             ->where('ride_request_bids.ride_request_id', $ride_request_id)
             ->where('users.status', 'active')
@@ -300,7 +301,7 @@ class RideRequestController extends Controller
                 'ride_request' => $riderequest,
             ]);
 
-            $riderequest->driver->update(['is_available' => 0]);
+            $riderequest->driver?->update(['is_available' => 0]);
 
             $message = __('message.updated');
         } elseif (request()->has('is_bid_accept') && request('is_bid_accept') == 2) {
@@ -409,7 +410,7 @@ class RideRequestController extends Controller
             ];
     
             saveRideHistory($history_data);
-            $riderequest->driver->update(['is_available' => 0]);
+            $riderequest->driver?->update(['is_available' => 0]);
             $message = __('message.updated');
         } else {
             // $riderequest->status = 'driver_declined';

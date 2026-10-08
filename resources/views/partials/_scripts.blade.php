@@ -57,23 +57,23 @@
          }
       }
 
-   //    $('#submit-btn').on('click', function(e) {
-   //       e.preventDefault();
-
-   //           $('#button-loader').show();
-   //           $('#submit-btn').prop('disabled', true);
-
-   //           setTimeout(function() {
-   //               $('form').submit();
-   //           }, 1000);
-   //   });
-
-     $('#submit-btn').closest('form').on('submit', function(e) {
-         if (this.checkValidity()) {
-            $('#button-loader').show();
-            $('#submit-btn').prop('disabled', true);
+   $('#submit-btn').closest('form').on('submit', function (e) {
+      if (!this.checkValidity()) return;
+      // let later handlers (phone check, jQuery Validate) cancel first
+      setTimeout(function () {
+         if (!(e.originalEvent || e).defaultPrevented) {
+               $('#button-loader').show();
+               $('#submit-btn').prop('disabled', true);
          }
-      });
+      }, 0);
+   });
+   // restore the button when the page comes back from the back-forward cache
+   window.addEventListener('pageshow', function (ev) {
+      if (ev.persisted) {
+         $('#button-loader').hide();
+         $('#submit-btn').prop('disabled', false);
+      }
+   });
 
       function formValidation(formId, rules, messages) {
          $(formId).validate({
@@ -100,7 +100,7 @@
      }
 </script>
 @if(isset($assets) && in_array('map', $assets))
-    <script src="https://maps.googleapis.com/maps/api/js?key={{env('GOOGLE_MAP_KEY')}}&libraries=drawing" defer></script>
+    <script src="https://maps.googleapis.com/maps/api/js?key={{env('GOOGLE_MAP_KEY')}}&v=3.64&libraries=drawing" defer></script>
 @endif
 
 @if(isset($assets) && in_array('map_place', $assets))

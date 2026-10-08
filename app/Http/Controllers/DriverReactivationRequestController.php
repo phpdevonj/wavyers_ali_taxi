@@ -46,6 +46,18 @@ class DriverReactivationRequestController extends Controller
         ]);
 
         $reactivationRequest = DriverReactivationRequest::findOrFail($id);
+
+        // A request can only be actioned once. Without this, a stale page or
+        // double click could e.g. permanently delete a driver that was just
+        // reactivated.
+        if ($reactivationRequest->status !== 'pending') {
+            $message = __('message.reactivation_request_already_resolved');
+            if ($request->ajax()) {
+                return response()->json(['status' => false, 'message' => $message]);
+            }
+            return redirect()->route('driver-reactivation-request.index')->withErrors($message);
+        }
+
         $driver = $reactivationRequest->driver;
 
         switch ($request->action) {

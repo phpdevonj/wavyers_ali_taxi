@@ -379,7 +379,7 @@ function saveRideHistory($data)
             }
             
             if ($ride_request->driver_id) {
-                $ride_request->driver->update(['is_available' => 1]);
+                $ride_request->driver?->update(['is_available' => 1]);
             } elseif ($ride_request->riderequest_in_driver) {
                 $ride_request->riderequest_in_driver->update(['is_available' => 1]);
             }
