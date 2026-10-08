@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\DataTables\DriverReactivationRequestDataTable;
 use App\Models\DriverReactivationRequest;
+use App\Notifications\DriverReactivatedNotification;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 
@@ -46,12 +47,37 @@ class DriverReactivationRequestController extends Controller
         ]);
 
         $reactivationRequest = DriverReactivationRequest::findOrFail($id);
+
+        // A request can only be actioned once. Without this, a stale page or
+        // double click could e.g. permanently delete a driver that was just
+        // reactivated.
+        if ($reactivationRequest->status !== 'pending') {
+            $message = __('message.reactivation_request_already_resolved');
+            if ($request->ajax()) {
+                return response()->json(['status' => false, 'message' => $message]);
+            }
+            return redirect()->route('driver-reactivation-request.index')->withErrors($message);
+        }
+
         $driver = $reactivationRequest->driver;
 
         switch ($request->action) {
             case 'reactivate':
                 if ($driver) {
                     $driver->restore();
+
+                    // Tell the driver they can log in again. A mail failure must
+                    // not undo or block the reactivation itself.
+                    if ($driver->email) {
+                        try {
+                            $driver->notify(new DriverReactivatedNotification());
+                        } catch (\Throwable $e) {
+                            Log::warning('Failed to send driver reactivation email', [
+                                'user_id' => $driver->id,
+                                'error' => $e->getMessage(),
+                            ]);
+                        }
+                    }
                 }
                 $reactivationRequest->status = 'reactivated';
                 break;

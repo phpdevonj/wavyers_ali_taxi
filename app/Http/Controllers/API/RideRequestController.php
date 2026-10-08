@@ -375,7 +375,7 @@ class RideRequestController extends Controller
 
         saveRideHistory($history_data);
         // update driver is_available
-        $ride_request->driver->update(['is_available' => 1]);
+        $ride_request->driver?->update(['is_available' => 1]);
 
         $loyalty_program = SettingData('ride', 'loyalty_program') ?? 0;
         if($loyalty_program){

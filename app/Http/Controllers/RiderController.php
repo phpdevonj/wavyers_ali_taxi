@@ -239,6 +239,14 @@ class RiderController extends Controller
         $status = 'errors';
         $message = __('message.not_found_entry', ['name' => __('message.rider')]);
 
+        if($user!='' && $user->hasInFlightRide()) {
+            $message = __('message.account_delete_active_ride');
+            if(request()->ajax()) {
+                return response()->json(['status' => false, 'message' => $message ]);
+            }
+            return redirect()->back()->withErrors($message);
+        }
+
         if($user!='') {
             // Deactivate: move to the "Deactivated Riders" section rather than
             // erasing anything. Phone/email/username are scrambled so the same

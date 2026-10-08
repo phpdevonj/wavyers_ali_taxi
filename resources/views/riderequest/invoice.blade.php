@@ -198,14 +198,14 @@
             <tbody>
                 <tr>
                     <td>
-                        {{ __('message.name') }}: {{ $ride_detail->driver->display_name }}<br>
-                        {{ __('message.contact') }}: {{ $ride_detail->driver->contact_number }} <br>
+                        {{ __('message.name') }}: {{ optional($ride_detail->driver)->display_name ?? '-' }}<br>
+                        {{ __('message.contact') }}: {{ optional($ride_detail->driver)->contact_number ?? '-' }} <br>
                         {{--  {{ __('message.car_model') }}: {{ $ride_detail->driver->userDetail->car_model }} <br>
                         {{ __('message.car_plate_number') }}: {{ $ride_detail->driver->userDetail->car_plate_number }}  --}}
                     </td>
                     <td>
-                        {{ __('message.name') }}: {{ $ride_detail->rider->display_name }}<br>
-                        {{ __('message.contact') }}: {{ $ride_detail->rider->contact_number }}
+                        {{ __('message.name') }}: {{ optional($ride_detail->rider)->display_name ?? '-' }}<br>
+                        {{ __('message.contact') }}: {{ optional($ride_detail->rider)->contact_number ?? '-' }}
                     </td>
                 </tr>
             </tbody>
