@@ -379,7 +379,7 @@ function saveRideHistory($data)
             }
             
             if ($ride_request->driver_id) {
-                $ride_request->driver?->update(['is_available' => 1]);
+                $ride_request->driver->update(['is_available' => 1]);
             } elseif ($ride_request->riderequest_in_driver) {
                 $ride_request->riderequest_in_driver->update(['is_available' => 1]);
             }
@@ -1269,7 +1269,8 @@ function calculateRideFares($distance_in_unit, $pickupLat, $pickupLng, $dropLat,
     $discount_amount = 0;
     $subtotal = $total_amount;
 
-    if ($coupon) {
+   if ($coupon) {
+        $coupon = is_array($coupon) ? (object)$coupon : $coupon;
         if ($coupon->minimum_amount < $total_amount) {
             if ($coupon->discount_type == 'percentage') {
                 $discount_amount = $total_amount * ($coupon->discount / 100);
@@ -1281,6 +1282,11 @@ function calculateRideFares($distance_in_unit, $pickupLat, $pickupLng, $dropLat,
                 $discount_amount = $coupon->maximum_discount;
             }
             $subtotal = $total_amount - $discount_amount;
+        } else {
+            $response = [
+                'message' => 'Minimum fare ₹'.$coupon->minimum_amount.' required.',
+            ];
+            throw new \Illuminate\Http\Exceptions\HttpResponseException(json_custom_response($response, 400));
         }
     }
 
