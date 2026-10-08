@@ -80,6 +80,7 @@ return array(
     'resolved' => 'Resolved',
     'not_available' => 'Not Available',
     'driver_account_deactivated' => 'Your driver account has been deactivated and removed from the app. We keep trip, earnings and account records. If you want to drive again later, you can request to reactivate your account.',
+    'driver_account_reactivation_request' => 'Your driver account has been deactivated. Would you like to request reactivation?',
     'driver_account_deactivated_admin' => 'A driver with this contact number is deactivated. Use the Driver Reactivation Requests section to reactivate, permanently delete, or leave the account as is.',
     'reactivation_request_submitted' => 'Your reactivation request has been submitted. An admin will review it shortly.',
     'admin' => 'Admin',

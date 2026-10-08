@@ -532,6 +532,22 @@ class UserController extends Controller
             } else {
                 $user_data = User::where('email',$input['email'])->first();
             }
+
+            // A deactivated driver must not get a new account created: offer reactivation instead.
+            if ($user_data == null && request('user_type') === 'driver') {
+                $deactivatedDriver = $input['login_type'] === 'mobile'
+                    ? User::findTrashedUserByContactNumber((string) ($input['contact_number'] ?? ''), 'driver')
+                    : User::findTrashedDriverByIdentity(null, $input['email'] ?? null);
+
+                if ($deactivatedDriver) {
+                    Log::channel('custom_api')->info('[SOCIAL_LOGIN] Deactivated driver attempted login', ['line' => __LINE__]);
+                    return json_custom_response([
+                        'status' => false,
+                        'deactivated' => true,
+                        'message' => __('message.driver_account_reactivation_request'),
+                    ]);
+                }
+            }
             
             if( $user_data != null ) {
                 if( !in_array($user_data->user_type, ['admin',request('user_type')] )) {
